@@ -2,13 +2,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Send, Volume2, User, Bot } from 'lucide-react';
-import OpenAI from 'openai';
-
-// Initialize OpenAI client only for speech-to-text and text-to-speech
-const openai = new OpenAI({
-  apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true
-});
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -74,14 +67,26 @@ export default function Home() {
   const transcribeAudio = async (audioBlob: Blob) => {
     try {
       setIsLoading(true);
-      const transcription = await openai.audio.transcriptions.create({
-        file: new File([audioBlob], 'audio.webm', { type: 'audio/webm' }),
-        model: 'whisper-1',
+      const formData = new FormData();
+      const file = new File([audioBlob], 'audio.webm', { type: 'audio/webm' });
+      formData.append('file', file);
+
+      const response = await fetch('/api/speech', {
+        method: 'POST',
+        body: formData,
+        // Don't set Content-Type header - let the browser set it with the boundary
       });
 
-      setInput(transcription.text);
-    } catch (error) {
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to transcribe audio');
+      }
+
+      const data = await response.json();
+      setInput(data.text);
+    } catch (error: any) {
       console.error('Error transcribing audio:', error);
+      alert(error.message || 'Failed to transcribe audio');
     } finally {
       setIsLoading(false);
     }
@@ -89,18 +94,26 @@ export default function Home() {
 
   const speakText = async (text: string) => {
     try {
-      const response = await openai.audio.speech.create({
-        model: 'tts-1',
-        voice: 'alloy',
-        input: text,
+      const response = await fetch('/api/speech', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate speech');
+      }
 
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
       audio.play();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating speech:', error);
+      alert(error.message || 'Failed to generate speech');
     }
   };
 
